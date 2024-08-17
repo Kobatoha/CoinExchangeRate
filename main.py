@@ -2,9 +2,9 @@ import logging
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import Message
-from aiogram import F
 from crypto_price import get_crypto_price
 from dotenv import load_dotenv
+import asyncio
 import os
 
 load_dotenv()
@@ -14,58 +14,71 @@ TOKEN = os.getenv('API_TOKEN')
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
+chat_data = {}
+
+
+async def check_prices():
+    while True:
+        for chat_id, cryptos in chat_data.items():
+            for crypto_symbol, thresholds in cryptos.items():
+                current_price = get_crypto_price(crypto_symbol)
+                min_threshold, max_threshold = thresholds
+
+                if current_price < min_threshold:
+                    await bot.send_message(
+                        chat_id,
+                        f'⚠️ {crypto_symbol} опустился ниже минимального порога! '
+                        f'Текущая цена: {current_price:.2f} USD'
+                    )
+                elif current_price > max_threshold:
+                    await bot.send_message(
+                        chat_id,
+                        f'🚀 {crypto_symbol} превысил максимальный порог! '
+                        f'Текущая цена: {current_price:.2f} USD'
+                    )
+
+        await asyncio.sleep(60)  # Проверка каждые 60 секунд
+
 
 @dp.message(Command("start"))
 async def start(message: Message):
+    chat_id = message.chat.id
+    if chat_id not in chat_data:
+        chat_data[chat_id] = {}
     await message.answer(
-        "Привет! Отправь мне символ криптовалюты (например, BTC), и я расскажу тебе её текущую стоимость в USD.\n"
-        "Можешь также указать пороговое значение, например: 'BTC 30000'."
+        "Привет! Отправь команду в формате /track BTC 30000 40000, чтобы следить за ценой криптовалюты."
     )
 
 
-@dp.message(F.text.regexp(r'^\w+(\s+\d+(\.\d+)?)?$'))
-async def send_crypto_price(message: Message):
+@dp.message(Command("track"))
+async def track_crypto(message: types.Message):
+    chat_id = message.chat.id
+
     try:
-        args = message.text.split()
-        crypto_symbol = args[0].upper()
-        threshold = float(args[1]) if len(args) > 1 else None
+        _, crypto_symbol, min_threshold, max_threshold = message.text.split()
+        min_threshold = float(min_threshold)
+        max_threshold = float(max_threshold)
 
-        price = get_crypto_price(crypto_symbol)
+        if chat_id not in chat_data:
+            chat_data[chat_id] = {}
 
-        if price:
-            if threshold:
-                if price >= threshold:
-                    await message.answer(
-                        f"⚠️ Внимание! Курс {crypto_symbol} достиг {price:.2f} USD, "
-                        f"что выше или равно пороговому значению {threshold:.2f} USD."
-                    )
-                else:
-                    await message.answer(
-                        f"Курс {crypto_symbol} составляет {price:.2f} USD, "
-                        f"что ниже порогового значения {threshold:.2f} USD."
-                    )
-            else:
-                await message.answer(
-                    f"Курс {crypto_symbol} составляет {price:.2f} USD."
-                )
-        else:
-            await message.answer(
-                "Не удалось получить данные о криптовалюте. Проверьте правильность символа."
-            )
+        chat_data[chat_id][crypto_symbol.upper()] = (min_threshold, max_threshold)
+        await message.answer(
+            f"Теперь вы отслеживаете {crypto_symbol.upper()} с порогами {min_threshold} - {max_threshold} USD."
+        )
+
     except ValueError:
         await message.answer(
-            "Пожалуйста, убедитесь, что вы указали корректное пороговое значение."
+            "Пожалуйста, введите данные в правильном формате: /track BTC 30000 40000"
         )
 
 
 async def main():
-    logging.basicConfig(level=logging.INFO)
-
-    dp.message.register(start, Command("start"))
-    dp.message.register(send_crypto_price)
+    asyncio.create_task(check_prices())
 
     await dp.start_polling(bot)
 
+
 if __name__ == '__main__':
-    import asyncio
+    logging.basicConfig(level=logging.INFO)
     asyncio.run(main())
