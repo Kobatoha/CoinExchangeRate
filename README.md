@@ -23,10 +23,10 @@ API_TOKEN=telegram_token_from_@BotFather
 COINMARKETCAP_TOKEN=token_from_https://pro.coinmarketcap.com/account
 
 4. В директории с Dockerfile в консоли написать команду и собрать Docker-образ:
-docker build -t crypto-price-bot .
+`docker build -t crypto-price-bot .`
 
 5. Запустить контейнер командой:
-docker run --env-file .env crypto-price-bot
+`docker run --env-file .env crypto-price-bot`
 
 Далее написать вашему телеграм-боту /start для создания словаря с данными пользователя.
 
